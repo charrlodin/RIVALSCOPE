@@ -11,47 +11,65 @@ model User {
   id            String    @id // Clerk user ID - no auto-generation
   email         String    @unique
   name          String?
+  signalsBalance Int      @default(50) // Free trial: 50 signals
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   
-  subscription  Subscription?
-  competitors   Competitor[]
-  notifications Notification[]
+  competitors        Competitor[]
+  notifications      Notification[]
+  signalPurchases    SignalPurchase[]
+  signalTransactions SignalTransaction[]
   
   @@map("users")
 }
 
-model Subscription {
+model SignalPurchase {
   id              String   @id @default(cuid())
-  userId          String   @unique
-  stripeCustomerId String?
-  stripePriceId   String?
-  stripeCurrentPeriodEnd DateTime?
-  plan            Plan     @default(FREE)
-  status          String   @default("active")
+  userId          String
+  pack            SignalPack
+  signals         Int      // Number of signals purchased
+  amount          Int      // Amount paid in cents
+  stripePaymentId String?
+  expiresAt       DateTime // Signals expire after 12 months
   createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
   
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   
-  @@map("subscriptions")
+  @@map("signal_purchases")
+}
+
+model SignalTransaction {
+  id           String         @id @default(cuid())
+  userId       String
+  competitorId String?
+  type         MonitoringType
+  signalsUsed  Int
+  description  String?
+  createdAt    DateTime       @default(now())
+  
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  competitor Competitor? @relation(fields: [competitorId], references: [id], onDelete: SetNull)
+  
+  @@map("signal_transactions")
 }
 
 model Competitor {
-  id          String   @id @default(cuid())
-  userId      String
-  url         String
-  name        String?
-  description String?
-  isActive    Boolean  @default(true)
+  id             String         @id @default(cuid())
+  userId         String
+  url            String
+  name           String?
+  description    String?
+  isActive       Boolean        @default(true)
+  monitoringType MonitoringType @default(SINGLE_PAGE)
   crawlFrequency CrawlFrequency @default(DAILY)
-  lastCrawled DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  lastCrawled    DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
   
-  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  crawlData   CrawlData[]
-  changes     Change[]
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  crawlData          CrawlData[]
+  changes            Change[]
+  signalTransactions SignalTransaction[]
   
   @@map("competitors")
 }
@@ -108,10 +126,16 @@ model Notification {
   @@map("notifications")
 }
 
-enum Plan {
-  FREE
-  STARTER
-  PRO
+enum SignalPack {
+  DEVELOPER  // $10 for 100 signals
+  STARTUP    // $45 for 500 signals
+  GROWTH     // $80 for 1,000 signals
+  SCALE      // $350 for 5,000 signals
+}
+
+enum MonitoringType {
+  SINGLE_PAGE    // 1 signal - single page check
+  SECTION        // 10 signals - section monitoring with crawl
 }
 
 enum CrawlFrequency {

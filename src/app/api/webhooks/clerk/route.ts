@@ -78,18 +78,13 @@ async function handleUserCreated(userData: any) {
       throw new Error('No primary email found');
     }
 
-    // Create user in our database
+    // Create user in our database with 50 free signals
     const user = await prisma.user.create({
       data: {
         id, // Use Clerk's user ID as our primary key
         email: primaryEmail.email_address,
         name: `${first_name || ''} ${last_name || ''}`.trim() || null,
-        subscription: {
-          create: {
-            plan: 'FREE',
-            status: 'active'
-          }
-        }
+        signalsBalance: 50 // Free trial: 50 signals
       }
     });
 

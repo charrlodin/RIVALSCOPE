@@ -26,6 +26,7 @@ export default function Dashboard() {
   const [url, setUrl] = useState('');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [monitoringType, setMonitoringType] = useState<'SINGLE_PAGE' | 'SECTION'>('SINGLE_PAGE');
   const [competitors, setCompetitors] = useState<Competitor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -33,24 +34,22 @@ export default function Dashboard() {
   const [error, setError] = useState('');
   const [selectedCompetitor, setSelectedCompetitor] = useState<Competitor | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [userPlan, setUserPlan] = useState<string>('FREE');
-  const [showLimitWarning, setShowLimitWarning] = useState(false);
+  const [userSignals, setUserSignals] = useState<number>(50);
+  const [showSignalWarning, setShowSignalWarning] = useState(false);
 
-  // Plan limits
-  const planLimits = {
-    FREE: 1,
-    STARTER: 5,
-    PRO: 20
+  // Signal costs for different monitoring types
+  const signalCosts = {
+    SINGLE_PAGE: 1,    // Single page check
+    SECTION: 10        // Section monitoring with crawl
   };
 
   // User data from Clerk with fallbacks
   const userData = {
     name: user?.fullName || user?.firstName || 'User',
     email: user?.primaryEmailAddress?.emailAddress || 'user@email.com',
-    plan: userPlan,
-    competitorsUsed: competitors.length,
-    competitorsLimit: planLimits[userPlan as keyof typeof planLimits] || 1,
-    nextBilling: '2024-01-15'
+    signalsBalance: userSignals,
+    competitorsCount: competitors.length,
+    signalsExpiry: '12 months from purchase'
   };
 
   // Fetch competitors data
@@ -77,10 +76,10 @@ export default function Dashboard() {
 
       if (userResponse.ok) {
         const userData = await userResponse.json();
-        setUserPlan(userData.subscription?.plan || 'FREE');
+        setUserSignals(userData.signalsBalance || 50);
       } else {
         console.error('Failed to fetch user data');
-        // Keep default FREE plan
+        // Keep default 50 signals
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -158,13 +157,26 @@ export default function Dashboard() {
     setIsSubmitting(true);
     setError('');
 
+    // Check if user has enough signals for selected monitoring type
+    const requiredSignals = signalCosts[monitoringType];
+    if (userData.signalsBalance < requiredSignals) {
+      setError(`Not enough signals! You need ${requiredSignals} signal${requiredSignals > 1 ? 's' : ''} but only have ${userData.signalsBalance}.`);
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
       const response = await fetch('/api/competitors', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name, url, description }),
+        body: JSON.stringify({ 
+          name, 
+          url, 
+          description, 
+          monitoringType 
+        }),
       });
 
       if (response.ok) {
@@ -252,46 +264,73 @@ export default function Dashboard() {
           </div>
           <Button 
             onClick={() => {
-              if (userData.plan === 'FREE' && userData.competitorsUsed >= userData.competitorsLimit) {
-                setShowLimitWarning(true);
+              if (userData.signalsBalance < signalCosts.SINGLE_PAGE) {
+                setShowSignalWarning(true);
               } else {
                 setShowAddForm(!showAddForm);
+                // Reset form when opening
+                if (!showAddForm) {
+                  setName('');
+                  setUrl('');
+                  setDescription('');
+                  setMonitoringType('SINGLE_PAGE');
+                  setError('');
+                }
               }
             }}
             className="transform rotate-1"
           >
-            + ADD COMPETITOR
+            + ADD RIVAL
           </Button>
         </div>
 
-        {/* User Plan Status */}
+        {/* Signals Status */}
         <Card color="cyan" className="mb-8 transform -rotate-1">
           <div className="transform rotate-1">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
-                <h2 className="text-2xl font-bold mb-2 text-black">CURRENT PLAN: {userData.plan}</h2>
+                <h2 className="text-2xl font-bold mb-2 text-black">SIGNALS BALANCE: {userData.signalsBalance}</h2>
                 <p className="font-mono text-black">
-                  Monitoring {userData.competitorsUsed}/{userData.competitorsLimit} competitors
+                  Monitoring {userData.competitorsCount} rivals • Signals expire in {userData.signalsExpiry}
                 </p>
               </div>
               <div className="flex space-x-2">
                 <Button variant="ghost" size="sm">
-                  UPGRADE PLAN
+                  BUY SIGNALS
                 </Button>
                 <Button variant="secondary" size="sm">
-                  BILLING
+                  USAGE HISTORY
                 </Button>
               </div>
             </div>
             
-            {/* Progress Bar */}
+            {/* Signal Costs Info */}
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-white border-4 border-black p-3">
+                <h3 className="font-bold text-black">SINGLE PAGE</h3>
+                <p className="font-mono text-sm text-black">{signalCosts.SINGLE_PAGE} signal • Monitor one specific URL</p>
+              </div>
+              <div className="bg-white border-4 border-black p-3">
+                <h3 className="font-bold text-black">SECTION CRAWL</h3>
+                <p className="font-mono text-sm text-black">{signalCosts.SECTION} signals • Monitor dynamic sections (blog, changelog)</p>
+              </div>
+            </div>
+            
+            {/* Progress Bar - showing usage of last 100 signals */}
             <div className="mt-4">
-              <div className="bg-brutalist-yellow border-4 border-black h-6">
+              <p className="font-mono text-sm text-black mb-2">Signal Usage (showing impact on balance)</p>
+              <div className="border-4 border-black h-6" style={{ backgroundColor: '#ffff00' }}>
                 <div 
-                  className="bg-brutalist-cyan h-full border-r-4 border-black"
-                  style={{ width: `${(userData.competitorsUsed / userData.competitorsLimit) * 100}%` }}
+                  className="h-full border-r-4 border-black"
+                  style={{ 
+                    width: `${Math.min((50 - userData.signalsBalance) / 50 * 100, 100)}%`,
+                    backgroundColor: '#00ffff'
+                  }}
                 ></div>
               </div>
+              <p className="font-mono text-xs text-black mt-1">
+                {50 - userData.signalsBalance} signals used from your initial 50 free signals
+              </p>
             </div>
           </div>
         </Card>
@@ -358,6 +397,58 @@ export default function Dashboard() {
                     />
                   </div>
                 </div>
+                
+                {/* Monitoring Type Selection */}
+                <div>
+                  <label className="block font-bold mb-2 text-black">MONITORING TYPE</label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div 
+                      className={`border-4 border-black p-4 cursor-pointer transform hover:scale-105 transition-transform ${
+                        monitoringType === 'SINGLE_PAGE' 
+                          ? 'bg-cyan-400' 
+                          : 'bg-white hover:bg-gray-100'
+                      }`}
+                      onClick={() => setMonitoringType('SINGLE_PAGE')}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-bold text-black">SINGLE PAGE</h3>
+                        <span className="bg-green-500 text-white px-2 py-1 text-xs font-bold border-2 border-black">
+                          {signalCosts.SINGLE_PAGE} SIGNAL
+                        </span>
+                      </div>
+                      <p className="font-mono text-sm text-black">
+                        Monitor one specific URL (homepage, pricing page, etc.)
+                      </p>
+                    </div>
+                    
+                    <div 
+                      className={`border-4 border-black p-4 cursor-pointer transform hover:scale-105 transition-transform ${
+                        monitoringType === 'SECTION' 
+                          ? 'bg-cyan-400' 
+                          : 'bg-white hover:bg-gray-100'
+                      }`}
+                      onClick={() => setMonitoringType('SECTION')}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-bold text-black">SECTION CRAWL</h3>
+                        <span className="bg-yellow-500 text-black px-2 py-1 text-xs font-bold border-2 border-black">
+                          {signalCosts.SECTION} SIGNALS
+                        </span>
+                      </div>
+                      <p className="font-mono text-sm text-black">
+                        Monitor dynamic sections (blog, changelog) + up to 5 pages
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="mt-2 bg-white border-4 border-black p-3">
+                    <p className="font-mono text-sm text-black">
+                      <strong>Cost: {signalCosts[monitoringType]} signal{signalCosts[monitoringType] > 1 ? 's' : ''}</strong> • 
+                      Your balance: {userData.signalsBalance} signals
+                    </p>
+                  </div>
+                </div>
+                
                 <div>
                   <label className="block font-bold mb-2 text-black">DESCRIPTION (OPTIONAL)</label>
                   <Input
@@ -540,8 +631,8 @@ export default function Dashboard() {
         />
       )}
 
-      {/* FREE Plan Limit Warning Modal */}
-      {showLimitWarning && (
+      {/* Insufficient Signals Warning Modal */}
+      {showSignalWarning && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="max-w-lg w-full">
             <Card color="yellow" className="transform rotate-1">
@@ -549,11 +640,11 @@ export default function Dashboard() {
                 <div className="flex justify-between items-center mb-4">
                   <div></div>
                   <h2 className="text-3xl font-bold text-black transform rotate-1 bg-red-500 text-white border-4 border-black px-4 py-2 inline-block">
-                    ⚠️ LIMIT REACHED!
+                    ⚠️ LOW SIGNALS!
                   </h2>
                   <Button 
                     variant="ghost" 
-                    onClick={() => setShowLimitWarning(false)}
+                    onClick={() => setShowSignalWarning(false)}
                     className="text-2xl leading-none p-2 text-black bg-white border-4 border-black hover:bg-red-500 hover:text-white"
                   >
                     ✕
@@ -563,15 +654,19 @@ export default function Dashboard() {
                 <div className="bg-white border-4 border-black p-6 mb-6 transform -rotate-1">
                   <div className="transform rotate-1">
                     <p className="font-bold text-xl text-black mb-4">
-                      FREE PLAN MAXED OUT!
+                      NOT ENOUGH SIGNALS!
                     </p>
                     <p className="font-mono text-black mb-4">
-                      You're already monitoring <strong>{userData.competitorsUsed}/{userData.competitorsLimit}</strong> competitors 
-                      on the FREE plan.
+                      You have <strong>{userData.signalsBalance} signals</strong> remaining.
+                      You need at least <strong>{signalCosts.SINGLE_PAGE} signal</strong> to monitor a new rival.
                     </p>
                     <p className="font-mono text-black text-sm">
-                      To add another rival, you can either:
+                      Signal costs:
                     </p>
+                    <div className="text-left mt-2">
+                      <p className="font-mono text-xs text-black">• Single Page: {signalCosts.SINGLE_PAGE} signal</p>
+                      <p className="font-mono text-xs text-black">• Section Crawl: {signalCosts.SECTION} signals</p>
+                    </div>
                   </div>
                 </div>
 
@@ -580,16 +675,16 @@ export default function Dashboard() {
                     <div className="transform -rotate-1">
                       <h3 className="font-bold text-black mb-2">OPTION 1: DELETE A RIVAL</h3>
                       <p className="font-mono text-sm text-black">
-                        Remove your current rival to free up space
+                        Remove an existing rival to save signals
                       </p>
                     </div>
                   </div>
                   
                   <div className="bg-pink-400 border-4 border-black p-4 transform -rotate-1">
                     <div className="transform rotate-1">
-                      <h3 className="font-bold text-black mb-2">OPTION 2: UPGRADE PLAN</h3>
+                      <h3 className="font-bold text-black mb-2">OPTION 2: BUY SIGNAL PACKS</h3>
                       <p className="font-mono text-sm text-black">
-                        STARTER: 5 rivals • PRO: 20 rivals
+                        Developer: 100 signals for $10 • Startup: 500 signals for $45
                       </p>
                     </div>
                   </div>
@@ -597,7 +692,7 @@ export default function Dashboard() {
 
                 <div className="flex flex-col sm:flex-row gap-4 mt-6">
                   <Button 
-                    onClick={() => setShowLimitWarning(false)}
+                    onClick={() => setShowSignalWarning(false)}
                     variant="secondary"
                     className="flex-1"
                   >
@@ -606,12 +701,12 @@ export default function Dashboard() {
                   
                   <Button 
                     onClick={() => {
-                      setShowLimitWarning(false);
-                      // Could add upgrade logic here
+                      setShowSignalWarning(false);
+                      // Could add purchase logic here
                     }}
                     className="flex-1 bg-green-500 text-white border-4 border-black hover:bg-green-600"
                   >
-                    UPGRADE PLAN
+                    BUY SIGNALS
                   </Button>
                 </div>
               </div>

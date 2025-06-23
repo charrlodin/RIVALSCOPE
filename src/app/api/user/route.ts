@@ -16,10 +16,20 @@ export async function GET() {
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: {
-        subscription: true,
         _count: {
           select: {
-            competitors: true
+            competitors: true,
+            signalTransactions: true
+          }
+        },
+        signalPurchases: {
+          where: {
+            expiresAt: {
+              gt: new Date()
+            }
+          },
+          orderBy: {
+            createdAt: 'desc'
           }
         }
       }
