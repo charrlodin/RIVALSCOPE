@@ -1,36 +1,155 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🔍 RivalScope
 
-## Getting Started
+**Automated Competitor Monitoring Platform with Neo-Brutalist Design**
 
-First, run the development server:
+RivalScope is a powerful competitor monitoring platform that automatically tracks your competitors' websites for changes in pricing, content, and features. Built with a bold neo-brutalist design that makes monitoring your competition both effective and visually striking.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## ✨ Features
+
+### 🎯 **Core Monitoring**
+- **Automated Web Scraping** powered by Firecrawl.dev
+- **Change Detection** for pricing, content, and feature updates
+- **Real-time Alerts** via email notifications
+- **Smart Reporting** with actionable insights
+
+### 🎨 **Neo-Brutalist Design**
+- **Bold Typography** with high contrast elements
+- **Geometric Layouts** with intentional rotations and shadows
+- **Vibrant Color Palette** (Yellow, Pink, Cyan, Green)
+- **Aggressive Visual Hierarchy** for maximum impact
+
+### 💰 **Flexible Pricing**
+- **Free Tier**: 1 website, weekly checks
+- **Starter Plan**: 5 websites, daily checks, email alerts ($49/month)
+- **Pro Plan**: 20 websites, hourly checks, advanced features ($99/month)
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Node.js 18+ 
+- PostgreSQL database
+- Firecrawl.dev API key
+- Stripe account (for payments)
+
+### Installation
+
+1. **Clone and Install**
+   ```bash
+   git clone <repository-url>
+   cd rivalscope
+   npm install
+   ```
+
+2. **Environment Setup**
+   ```bash
+   cp .env.example .env
+   # Fill in your environment variables
+   ```
+
+3. **Database Setup**
+   ```bash
+   npm run db:generate
+   npm run db:push
+   ```
+
+4. **Start Development**
+   ```bash
+   npm run dev
+   ```
+
+Visit `http://localhost:3000` to see your brutal competitor monitoring platform!
+
+## 🛠 Tech Stack
+
+### **Frontend**
+- **Next.js 15** with App Router
+- **TypeScript** for type safety
+- **Tailwind CSS** with custom neo-brutalist design system
+- **Clerk** for authentication and user management
+
+### **Backend**
+- **Next.js API Routes**
+- **Prisma ORM** with PostgreSQL
+- **Firecrawl.dev** for web scraping
+- **Stripe** for subscription management
+
+### **Services**
+- **Clerk** for user authentication and management
+- **Nodemailer** for email notifications
+- **Prisma Client** for database operations
+- **Svix** for webhook verification
+
+## 🔧 Configuration
+
+### **Environment Variables**
+```env
+DATABASE_URL="postgresql://username:password@localhost:5432/rivalscope"
+
+# Clerk Authentication
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="your-clerk-publishable-key"
+CLERK_SECRET_KEY="your-clerk-secret-key"
+CLERK_WEBHOOK_SECRET="your-clerk-webhook-secret"
+
+# Firecrawl API
+FIRECRAWL_API_KEY="your-firecrawl-api-key"
+
+# Stripe
+STRIPE_SECRET_KEY="your-stripe-secret-key"
+STRIPE_WEBHOOK_SECRET="your-stripe-webhook-secret"
+
+# Email
+SMTP_HOST="smtp.gmail.com"
+SMTP_USER="your-email@gmail.com"
+SMTP_PASSWORD="your-email-password"
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### **Clerk Setup**
+1. Create a Clerk application at [clerk.com](https://clerk.com)
+2. Copy your publishable and secret keys to `.env.local`
+3. Set up webhook endpoint: `/api/webhooks/clerk` for user sync
+4. Required webhook events: `user.created`, `user.updated`, `user.deleted`
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### **Database Scripts**
+```bash
+npm run db:generate    # Generate Prisma client
+npm run db:push       # Push schema to database
+npm run db:migrate    # Create and run migrations
+npm run db:studio     # Open Prisma Studio
+npm run db:reset      # Reset database (destructive)
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 🎨 Design System
 
-## Learn More
+### **Colors**
+- **Primary Yellow**: `#ffff00` - Call-to-action buttons
+- **Hot Pink**: `#ff69b4` - Secondary elements
+- **Electric Cyan**: `#00ffff` - Accent highlights
+- **Lime Green**: `#00ff00` - Success states
+- **Pure Black**: `#000000` - Borders and text
+- **Pure White**: `#ffffff` - Backgrounds
 
-To learn more about Next.js, take a look at the following resources:
+### **Typography**
+- **Headers**: Bold, uppercase, high-contrast
+- **Body**: Monospace font for technical feel
+- **UI Elements**: All caps for maximum impact
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### **Components**
+- **Brutal Shadows**: `8px 8px 0px 0px #000000`
+- **Thick Borders**: `4px solid #000000`
+- **Intentional Rotations**: `-2deg` to `2deg` transforms
+- **High Contrast**: Pure black text on bright backgrounds
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 🔐 Authentication
 
-## Deploy on Vercel
+RivalScope uses Clerk for modern authentication:
+- **User Registration & Login**: Modal-based sign up/sign in
+- **Session Management**: Secure JWT sessions with automatic refresh
+- **User Management**: Profile management, email verification
+- **Database Sync**: Webhook integration to sync users with Prisma
+- **Protected Routes**: Middleware-based route protection
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+**Built with ❤️ and a lot of ⚡BRUTAL ENERGY⚡**
+
+*Keep your enemies closer, and your competitors even closer.*

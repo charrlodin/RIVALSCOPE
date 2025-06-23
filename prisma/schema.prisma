@@ -1,0 +1,143 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id // Clerk user ID - no auto-generation
+  email         String    @unique
+  name          String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  subscription  Subscription?
+  competitors   Competitor[]
+  notifications Notification[]
+  
+  @@map("users")
+}
+
+model Subscription {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  stripeCustomerId String?
+  stripePriceId   String?
+  stripeCurrentPeriodEnd DateTime?
+  plan            Plan     @default(FREE)
+  status          String   @default("active")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("subscriptions")
+}
+
+model Competitor {
+  id          String   @id @default(cuid())
+  userId      String
+  url         String
+  name        String?
+  description String?
+  isActive    Boolean  @default(true)
+  crawlFrequency CrawlFrequency @default(DAILY)
+  lastCrawled DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  crawlData   CrawlData[]
+  changes     Change[]
+  
+  @@map("competitors")
+}
+
+model CrawlData {
+  id           String   @id @default(cuid())
+  competitorId String
+  url          String
+  content      String
+  contentHash  String
+  metadata     Json?
+  crawledAt    DateTime @default(now())
+  
+  competitor Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  changes    Change[]
+  
+  @@map("crawl_data")
+}
+
+model Change {
+  id           String     @id @default(cuid())
+  competitorId String
+  crawlDataId  String
+  changeType   ChangeType
+  title        String
+  description  String?
+  oldValue     String?
+  newValue     String?
+  severity     Severity   @default(MEDIUM)
+  isRead       Boolean    @default(false)
+  detectedAt   DateTime   @default(now())
+  
+  competitor Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  crawlData  CrawlData  @relation(fields: [crawlDataId], references: [id], onDelete: Cascade)
+  notifications Notification[]
+  
+  @@map("changes")
+}
+
+model Notification {
+  id         String           @id @default(cuid())
+  userId     String
+  changeId   String
+  type       NotificationType @default(EMAIL)
+  title      String
+  message    String
+  isRead     Boolean          @default(false)
+  sentAt     DateTime?
+  createdAt  DateTime         @default(now())
+  
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  change Change @relation(fields: [changeId], references: [id], onDelete: Cascade)
+  
+  @@map("notifications")
+}
+
+enum Plan {
+  FREE
+  STARTER
+  PRO
+}
+
+enum CrawlFrequency {
+  HOURLY
+  DAILY
+  WEEKLY
+}
+
+enum ChangeType {
+  PRICE_CHANGE
+  CONTENT_UPDATE
+  NEW_BLOG_POST
+  FEATURE_ANNOUNCEMENT
+  PRODUCT_UPDATE
+  GENERAL_CHANGE
+}
+
+enum Severity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum NotificationType {
+  EMAIL
+  IN_APP
+  PUSH
+}

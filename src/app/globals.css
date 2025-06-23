@@ -2,7 +2,7 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #000000;
 }
 
 @theme inline {
@@ -12,15 +12,48 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Force light mode for neo-brutalist design - no dark mode override */
+body {
+  background: #ffffff;
+  color: #000000;
+  font-family: Arial, Helvetica, sans-serif;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Ensure high contrast for accessibility */
+* {
+  color: inherit;
+}
+
+/* Neo-brutalist base styles */
+h1, h2, h3, h4, h5, h6 {
+  color: #000000;
+  font-weight: bold;
+}
+
+p {
+  color: #000000;
+}
+
+/* Override any default link colors for better contrast */
+a {
+  color: inherit;
+}
+
+/* Ensure any elements with black hover backgrounds have white text */
+.hover\:bg-black:hover {
+  color: white !important;
+}
+
+/* Neo-brutalist interactive states */
+button:hover, 
+a:hover {
+  transition: all 0.2s ease;
+}
+
+/* Focus states for accessibility */
+button:focus-visible,
+input:focus-visible,
+a:focus-visible {
+  outline: 4px solid #ffff00;
+  outline-offset: 2px;
 }
