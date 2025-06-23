@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/prisma';
 
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
+    const { userId } = await auth();
     
-    if (!session?.user?.id) {
+    if (!userId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -16,7 +15,7 @@ export async function GET() {
 
     const competitors = await prisma.competitor.findMany({
       where: {
-        userId: session.user.id
+        userId: userId
       },
       include: {
         _count: {
@@ -46,9 +45,9 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const { userId } = await auth();
     
-    if (!session?.user?.id) {
+    if (!userId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -73,9 +72,45 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check user's subscription limits
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { 
+        subscription: true,
+        _count: {
+          select: {
+            competitors: true
+          }
+        }
+      }
+    });
+
+    if (!user) {
+      return NextResponse.json(
+        { error: 'User not found' },
+        { status: 404 }
+      );
+    }
+
+    const plan = user.subscription?.plan || 'FREE';
+    const currentCount = user._count.competitors;
+    
+    const limits = {
+      FREE: 1,
+      STARTER: 5,
+      PRO: 20
+    };
+
+    if (currentCount >= limits[plan as keyof typeof limits]) {
+      return NextResponse.json(
+        { error: `Plan limit reached. ${plan} plan allows ${limits[plan as keyof typeof limits]} competitors.` },
+        { status: 403 }
+      );
+    }
+
     const existingCompetitor = await prisma.competitor.findFirst({
       where: {
-        userId: session.user.id,
+        userId: userId,
         url: url
       }
     });
@@ -89,7 +124,7 @@ export async function POST(request: NextRequest) {
 
     const competitor = await prisma.competitor.create({
       data: {
-        userId: session.user.id,
+        userId: userId,
         url,
         name: name || new URL(url).hostname,
         description

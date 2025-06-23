@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/prisma';
 import { firecrawl } from '@/lib/firecrawl';
+import { changeDetector } from '@/lib/change-detector';
 import crypto from 'crypto';
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const { userId } = await auth();
     
-    if (!session?.user?.id) {
+    if (!userId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     const competitor = await prisma.competitor.findFirst({
       where: {
         id: competitorId,
-        userId: session.user.id
+        userId: userId
       }
     });
 
@@ -48,28 +48,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const content = result.data.content;
+    const content = result.data.markdown;
     const contentHash = crypto.createHash('sha256').update(content).digest('hex');
+    const metadata = result.data.metadata || {};
 
-    const previousCrawl = await prisma.crawlData.findFirst({
-      where: {
-        competitorId: competitor.id
-      },
-      orderBy: {
-        crawledAt: 'desc'
-      }
-    });
-
+    // Create new crawl data entry
     const crawlData = await prisma.crawlData.create({
       data: {
         competitorId: competitor.id,
         url: competitor.url,
         content,
         contentHash,
-        metadata: result.data.metadata || {}
+        metadata
       }
     });
 
+    // Update competitor last crawled time
     await prisma.competitor.update({
       where: {
         id: competitor.id
@@ -79,27 +73,32 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    let hasChanges = false;
-    if (previousCrawl && previousCrawl.contentHash !== contentHash) {
-      hasChanges = true;
-      
-      await prisma.change.create({
-        data: {
-          competitorId: competitor.id,
-          crawlDataId: crawlData.id,
-          changeType: 'GENERAL_CHANGE',
-          title: 'Content Updated',
-          description: 'Website content has been modified',
-          severity: 'MEDIUM'
-        }
-      });
+    // Detect and process changes
+    const detectedChanges = await changeDetector.detectChanges(
+      competitor.id,
+      content,
+      contentHash,
+      metadata
+    );
+
+    // Save detected changes
+    if (detectedChanges.length > 0) {
+      await changeDetector.saveChanges(
+        competitor.id,
+        crawlData.id,
+        detectedChanges
+      );
     }
 
     return NextResponse.json({
       success: true,
-      crawlData,
-      hasChanges,
-      contentLength: content.length
+      crawlData: {
+        id: crawlData.id,
+        contentLength: content.length,
+        crawledAt: crawlData.crawledAt
+      },
+      changesDetected: detectedChanges.length,
+      changes: detectedChanges
     });
 
   } catch (error) {

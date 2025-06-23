@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Webhook } from 'svix';
 import { headers } from 'next/headers';
 import { prisma } from '@/lib/prisma';
+import { EmailService } from '@/lib/resend';
 
 export async function POST(request: NextRequest) {
   // Get the headers
@@ -93,6 +94,16 @@ async function handleUserCreated(userData: any) {
     });
 
     console.log('User created in database:', user.id);
+
+    // Send welcome email
+    try {
+      const userName = user.name || first_name || primaryEmail.email_address.split('@')[0];
+      await EmailService.sendWelcomeEmail(user.email, userName);
+      console.log('Welcome email sent to:', user.email);
+    } catch (emailError) {
+      console.error('Failed to send welcome email:', emailError);
+      // Don't throw here - user creation should succeed even if email fails
+    }
   } catch (error) {
     console.error('Error creating user:', error);
     throw error;

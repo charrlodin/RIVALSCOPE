@@ -1,47 +1,56 @@
+import FirecrawlApp from '@mendable/firecrawl-js';
+
 interface FirecrawlResponse {
   success: boolean;
   data?: {
-    content: string;
+    markdown: string;
+    html?: string;
     metadata?: {
       title?: string;
       description?: string;
-      url?: string;
+      sourceURL?: string;
+      statusCode?: number;
     };
   };
   error?: string;
 }
 
 export class FirecrawlService {
-  private apiKey: string;
-  private baseUrl = 'https://api.firecrawl.dev/v0';
+  private app: FirecrawlApp;
 
   constructor(apiKey: string) {
-    this.apiKey = apiKey;
+    this.app = new FirecrawlApp({ apiKey });
   }
 
   async scrapeUrl(url: string): Promise<FirecrawlResponse> {
     try {
-      const response = await fetch(`${this.baseUrl}/scrape`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          url,
-          formats: ['markdown', 'html'],
-          onlyMainContent: true,
-          includeTags: ['title', 'meta', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a', 'li', 'div'],
-          excludeTags: ['nav', 'footer', 'header', 'aside', 'script', 'style'],
-        }),
+      const scrapeResult = await this.app.scrapeUrl(url, {
+        formats: ['markdown', 'html'],
+        onlyMainContent: true,
+        includeTags: ['title', 'meta', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a', 'li', 'div'],
+        excludeTags: ['nav', 'footer', 'header', 'aside', 'script', 'style'],
       });
 
-      if (!response.ok) {
-        throw new Error(`Firecrawl API error: ${response.status}`);
+      if (!scrapeResult.success) {
+        return {
+          success: false,
+          error: scrapeResult.error || 'Failed to scrape URL'
+        };
       }
 
-      const result = await response.json();
-      return result;
+      return {
+        success: true,
+        data: {
+          markdown: scrapeResult.data?.markdown || '',
+          html: scrapeResult.data?.html,
+          metadata: {
+            title: scrapeResult.data?.metadata?.title,
+            description: scrapeResult.data?.metadata?.description,
+            sourceURL: scrapeResult.data?.metadata?.sourceURL || url,
+            statusCode: scrapeResult.data?.metadata?.statusCode
+          }
+        }
+      };
     } catch (error) {
       console.error('Firecrawl scraping error:', error);
       return {
@@ -53,31 +62,43 @@ export class FirecrawlService {
 
   async crawlWebsite(url: string, maxPages: number = 10): Promise<FirecrawlResponse> {
     try {
-      const response = await fetch(`${this.baseUrl}/crawl`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          url,
-          crawlerOptions: {
-            maxDepth: 2,
-            limit: maxPages,
-          },
-          pageOptions: {
-            onlyMainContent: true,
-            includeHtml: false,
-          }
-        }),
+      const crawlResult = await this.app.crawlUrl(url, {
+        limit: maxPages,
+        scrapeOptions: {
+          formats: ['markdown', 'html'],
+          onlyMainContent: true,
+        }
       });
 
-      if (!response.ok) {
-        throw new Error(`Firecrawl API error: ${response.status}`);
+      if (!crawlResult.success) {
+        return {
+          success: false,
+          error: crawlResult.error || 'Failed to crawl website'
+        };
       }
 
-      const result = await response.json();
-      return result;
+      // Return the first page's data for compatibility
+      const firstPage = crawlResult.data?.[0];
+      if (!firstPage) {
+        return {
+          success: false,
+          error: 'No pages found'
+        };
+      }
+
+      return {
+        success: true,
+        data: {
+          markdown: firstPage.markdown || '',
+          html: firstPage.html,
+          metadata: {
+            title: firstPage.metadata?.title,
+            description: firstPage.metadata?.description,
+            sourceURL: firstPage.metadata?.sourceURL || url,
+            statusCode: firstPage.metadata?.statusCode
+          }
+        }
+      };
     } catch (error) {
       console.error('Firecrawl crawling error:', error);
       return {

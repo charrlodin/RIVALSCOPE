@@ -1,7 +1,7 @@
 'use client';
 
 import { useUser } from '@clerk/nextjs';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
 import Header from '@/components/layout/Header';
 import Button from '@/components/ui/Button';
@@ -10,13 +10,14 @@ import Card from '@/components/ui/Card';
 export default function Home() {
   const { isSignedIn, isLoaded } = useUser();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
-  // Redirect authenticated users to dashboard
+  // Redirect authenticated users to dashboard (unless they specifically want to stay on landing)
   useEffect(() => {
-    if (isLoaded && isSignedIn) {
+    if (isLoaded && isSignedIn && !searchParams.get('stay')) {
       router.push('/dashboard');
     }
-  }, [isLoaded, isSignedIn, router]);
+  }, [isLoaded, isSignedIn, router, searchParams]);
   return (
     <div className="min-h-screen bg-white">
       <Header />
