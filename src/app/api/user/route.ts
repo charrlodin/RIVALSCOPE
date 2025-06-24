@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { auth, currentUser } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/prisma';
 
 export async function GET() {
@@ -13,8 +13,22 @@ export async function GET() {
       );
     }
 
-    const user = await prisma.user.findUnique({
+    // Get current user from Clerk to get email
+    const clerkUser = await currentUser();
+    const userEmail = clerkUser?.emailAddresses?.[0]?.emailAddress || `user-${userId}@rivalscope.com`;
+
+    // Upsert user - create if doesn't exist, otherwise return existing
+    const user = await prisma.user.upsert({
       where: { id: userId },
+      update: {
+        // Update email if it changed
+        email: userEmail,
+      },
+      create: {
+        id: userId,
+        email: userEmail,
+        signalsBalance: 50, // Free trial signals
+      },
       include: {
         _count: {
           select: {
@@ -34,13 +48,6 @@ export async function GET() {
         }
       }
     });
-
-    if (!user) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
-    }
 
     return NextResponse.json(user);
   } catch (error) {

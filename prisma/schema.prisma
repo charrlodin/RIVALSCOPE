@@ -8,12 +8,14 @@ datasource db {
 }
 
 model User {
-  id            String    @id // Clerk user ID - no auto-generation
-  email         String    @unique
-  name          String?
-  signalsBalance Int      @default(50) // Free trial: 50 signals
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                    String              @id // Clerk user ID - no auto-generation
+  email                 String              @unique
+  name                  String?
+  signalsBalance        Int                 @default(50) // Free trial: 50 signals
+  emailNotificationFreq NotificationFreq    @default(INSTANT)
+  digestNotifications   Boolean             @default(true)
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
   
   competitors        Competitor[]
   notifications      Notification[]
@@ -54,24 +56,54 @@ model SignalTransaction {
 }
 
 model Competitor {
-  id             String         @id @default(cuid())
-  userId         String
-  url            String
-  name           String?
-  description    String?
-  isActive       Boolean        @default(true)
-  monitoringType MonitoringType @default(SINGLE_PAGE)
-  crawlFrequency CrawlFrequency @default(DAILY)
-  lastCrawled    DateTime?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id                    String              @id @default(cuid())
+  userId                String
+  url                   String
+  name                  String?
+  description           String?
+  isActive              Boolean             @default(true)
+  monitoringType        MonitoringType      @default(SINGLE_PAGE)
+  crawlFrequency        CrawlFrequency      @default(DAILY)
+  notificationFreq      NotificationFreq    @default(INSTANT)
+  enableNotifications   Boolean             @default(true)
+  smartTracking         Boolean             @default(false)
+  priorityPaths         Json?               // Store priority paths like ["/pricing", "/blog", "/products"]
+  lastCrawled           DateTime?
+  lastSuccessfulCrawl   DateTime?
+  lastSitemapCheck      DateTime?
+  crawlAttempts         Int                 @default(0)
+  successfulCrawls      Int                 @default(0)
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
   
   user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   crawlData          CrawlData[]
   changes            Change[]
   signalTransactions SignalTransaction[]
+  crawlLogs          CrawlLog[]
+  sitemapUrls        SitemapUrl[]
   
   @@map("competitors")
+}
+
+model SitemapUrl {
+  id           String    @id @default(cuid())
+  competitorId String
+  url          String
+  lastmod      DateTime? // From sitemap <lastmod>
+  contentHash  String?   // SHA256 hash of content for change detection
+  priority     Float?    // From sitemap <priority> 
+  changefreq   String?   // From sitemap <changefreq>
+  isPriority   Boolean   @default(false) // User-marked priority path
+  lastCrawled  DateTime?
+  isActive     Boolean   @default(true) // Can be disabled if URL returns 404 repeatedly
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  
+  competitor Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  
+  @@unique([competitorId, url])
+  @@map("sitemap_urls")
 }
 
 model CrawlData {
@@ -87,6 +119,22 @@ model CrawlData {
   changes    Change[]
   
   @@map("crawl_data")
+}
+
+model CrawlLog {
+  id           String      @id @default(cuid())
+  competitorId String
+  status       CrawlStatus
+  signalsUsed  Int
+  startedAt    DateTime    @default(now())
+  completedAt  DateTime?
+  errorMessage String?
+  pagesFound   Int?
+  changesFound Int         @default(0)
+  
+  competitor Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  
+  @@map("crawl_logs")
 }
 
 model Change {
@@ -136,12 +184,28 @@ enum SignalPack {
 enum MonitoringType {
   SINGLE_PAGE    // 1 signal - single page check
   SECTION        // 10 signals - section monitoring with crawl
+  SMART          // Variable signals - smart tracking based on changes
 }
 
 enum CrawlFrequency {
-  HOURLY
   DAILY
   WEEKLY
+  MONTHLY
+}
+
+enum NotificationFreq {
+  INSTANT     // Send immediately when changes detected
+  DAILY       // Daily digest of changes
+  WEEKLY      // Weekly digest of changes
+  MONTHLY     // Monthly digest of changes
+  DISABLED    // No notifications
+}
+
+enum CrawlStatus {
+  SUCCESS
+  FAILED
+  PARTIAL     // Some pages failed
+  IN_PROGRESS
 }
 
 enum ChangeType {

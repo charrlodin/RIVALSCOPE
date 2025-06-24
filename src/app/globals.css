@@ -57,3 +57,13 @@ a:focus-visible {
   outline: 4px solid #ffff00;
   outline-offset: 2px;
 }
+
+/* Wobble animation for guiding user attention */
+@keyframes wobble {
+  0%, 100% { transform: rotate(1deg); }
+  15% { transform: rotate(-2deg) scale(1.02); }
+  30% { transform: rotate(1.5deg) scale(1.01); }
+  45% { transform: rotate(-1deg) scale(1.02); }
+  60% { transform: rotate(1deg) scale(1.01); }
+  75% { transform: rotate(-0.5deg) scale(1.01); }
+}

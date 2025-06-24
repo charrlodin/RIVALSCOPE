@@ -64,7 +64,7 @@ export async function PUT(
       );
     }
 
-    const { name, description, isActive } = await request.json();
+    const { name, description, isActive, monitoringType, crawlFrequency, notificationFreq, enableNotifications } = await request.json();
 
     const competitor = await prisma.competitor.findFirst({
       where: {
@@ -87,7 +87,11 @@ export async function PUT(
       data: {
         name,
         description,
-        isActive
+        isActive,
+        ...(monitoringType && { monitoringType }),
+        ...(crawlFrequency && { crawlFrequency }),
+        ...(notificationFreq && { notificationFreq }),
+        ...(enableNotifications !== undefined && { enableNotifications })
       }
     });
 

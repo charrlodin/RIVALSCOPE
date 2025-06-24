@@ -14,11 +14,74 @@ interface Competitor {
   url: string;
   description: string | null;
   lastCrawled: Date | null;
+  lastSuccessfulCrawl: Date | null;
   isActive: boolean;
+  crawlFrequency: 'DAILY' | 'WEEKLY' | 'MONTHLY';
+  monitoringType: 'SINGLE_PAGE' | 'SECTION';
+  crawlAttempts: number;
+  successfulCrawls: number;
   _count: {
     changes: number;
+    crawlLogs: number;
   };
 }
+
+// Helper function to determine competitor status
+const getCompetitorStatus = (competitor: Competitor) => {
+  if (!competitor.isActive) {
+    return { 
+      status: 'PAUSED', 
+      color: '#ff69b4', // Pink
+      icon: '⏸',
+      description: 'Monitoring paused by user'
+    };
+  }
+  
+  if (competitor.crawlAttempts === 0) {
+    return { 
+      status: 'PENDING', 
+      color: '#ffff00', // Yellow
+      icon: '⏳',
+      description: 'Waiting for first crawl'
+    };
+  }
+  
+  const successRate = competitor.successfulCrawls / competitor.crawlAttempts;
+  
+  if (successRate === 0) {
+    return { 
+      status: 'FAILING', 
+      color: '#ff0000', // Red
+      icon: '❌',
+      description: 'All crawl attempts failed'
+    };
+  }
+  
+  if (successRate < 0.5) {
+    return { 
+      status: 'UNSTABLE', 
+      color: '#ff8800', // Orange
+      icon: '⚠️',
+      description: 'Frequent crawl failures'
+    };
+  }
+  
+  if (successRate < 1) {
+    return { 
+      status: 'ACTIVE', 
+      color: '#00ff00', // Green
+      icon: '●',
+      description: 'Monitoring with some issues'
+    };
+  }
+  
+  return { 
+    status: 'HEALTHY', 
+    color: '#00ff00', // Green
+    icon: '✅',
+    description: 'Monitoring perfectly'
+  };
+};
 
 export default function Dashboard() {
   const { user, isLoaded } = useUser();
@@ -26,30 +89,43 @@ export default function Dashboard() {
   const [url, setUrl] = useState('');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [monitoringType, setMonitoringType] = useState<'SINGLE_PAGE' | 'SECTION'>('SINGLE_PAGE');
+  const [monitoringType, setMonitoringType] = useState<'SINGLE_PAGE' | 'SECTION' | 'SMART'>('SINGLE_PAGE');
+  const [userIntent, setUserIntent] = useState('');
+  const [customUrls, setCustomUrls] = useState<string[]>(['']);
+  const [showCustomUrls, setShowCustomUrls] = useState(false);
   const [competitors, setCompetitors] = useState<Competitor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCrawling, setIsCrawling] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [selectedCompetitor, setSelectedCompetitor] = useState<Competitor | null>(null);
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [userSignals, setUserSignals] = useState<number>(50);
+  const [userData, setUserData] = useState<any>({ signalsBalance: 50, name: 'User', competitorsCount: 0, signalsExpiry: '12 months' });
   const [showSignalWarning, setShowSignalWarning] = useState(false);
+  const [sitemapInfo, setSitemapInfo] = useState<any>(null);
+  const [isLoadingSitemap, setIsLoadingSitemap] = useState(false);
+  const [smartPreview, setSmartPreview] = useState<any>(null);
+  const [isLoadingSmartPreview, setIsLoadingSmartPreview] = useState(false);
+  const [aiRecommendation, setAIRecommendation] = useState<any>(null);
+  const [isLoadingAI, setIsLoadingAI] = useState(false);
+  const [priorityPaths, setPriorityPaths] = useState<string[]>(['']);
 
   // Signal costs for different monitoring types
   const signalCosts = {
     SINGLE_PAGE: 1,    // Single page check
-    SECTION: 10        // Section monitoring with crawl
+    SECTION: sitemapInfo?.sitemap?.totalPages || 10,       // Section monitoring with crawl - use actual page count
+    SMART: aiRecommendation?.estimated_signals || smartPreview?.estimatedSignals || 5  // AI-powered smart tracking
   };
 
-  // User data from Clerk with fallbacks
-  const userData = {
-    name: user?.fullName || user?.firstName || 'User',
-    email: user?.primaryEmailAddress?.emailAddress || 'user@email.com',
+  // Update userData with live competitor count and Clerk info
+  const currentUserData = {
+    ...userData,
+    name: user?.fullName || user?.firstName || userData.name || 'User',
+    email: user?.primaryEmailAddress?.emailAddress || userData.email || 'user@email.com',
     signalsBalance: userSignals,
     competitorsCount: competitors.length,
-    signalsExpiry: '12 months from purchase'
   };
 
   // Fetch competitors data
@@ -75,12 +151,20 @@ export default function Dashboard() {
       }
 
       if (userResponse.ok) {
-        const userData = await userResponse.json();
-        setUserSignals(userData.signalsBalance || 50);
+        const userDataResponse = await userResponse.json();
+        setUserData({
+          ...userDataResponse,
+          competitorsCount: userDataResponse._count?.competitors || 0,
+          signalsExpiry: '12 months' // Default expiry
+        });
+        setUserSignals(userDataResponse.signalsBalance || 50);
       } else {
         console.error('Failed to fetch user data');
-        // Keep default 50 signals
+        // Keep default values
       }
+
+      // Fetch recent activity
+      await fetchRecentActivity();
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -113,44 +197,124 @@ export default function Dashboard() {
     alertsSent: competitors.reduce((sum, comp) => sum + (comp._count?.changes || 0), 0)
   };
 
-  const recentActivity = [
-    {
-      id: '1',
-      type: 'PRICE_CHANGE',
-      title: 'PRICING PAGE UPDATED',
-      competitor: 'Competitor A',
-      description: 'Starter plan price changed from $29 to $39',
-      time: '2 hours ago',
-      severity: 'high'
-    },
-    {
-      id: '2', 
-      type: 'CONTENT_UPDATE',
-      title: 'NEW BLOG POST',
-      competitor: 'Competitor B',
-      description: 'Published "10 Ways to Scale Your Business"',
-      time: '1 day ago',
-      severity: 'medium'
-    },
-    {
-      id: '3',
-      type: 'FEATURE_ANNOUNCEMENT', 
-      title: 'PRODUCT UPDATE',
-      competitor: 'Competitor C',
-      description: 'Launched new integration with Salesforce',
-      time: '2 days ago',
-      severity: 'high'
-    },
-    {
-      id: '4',
-      type: 'CONTENT_UPDATE',
-      title: 'FEATURE PAGE UPDATED',
-      competitor: 'Competitor A', 
-      description: 'Added new API documentation section',
-      time: '3 days ago',
-      severity: 'low'
+  // Function to fetch recent activity
+  const fetchRecentActivity = async () => {
+    try {
+      const response = await fetch('/api/activity');
+      if (response.ok) {
+        const data = await response.json();
+        setRecentActivity(data);
+      }
+    } catch (error) {
+      console.error('Error fetching activity:', error);
     }
-  ];
+  };
+
+  // Function to fetch sitemap information
+  const fetchSitemapInfo = async (url: string) => {
+    if (!url) {
+      setSitemapInfo(null);
+      setSmartPreview(null);
+      return;
+    }
+
+    setIsLoadingSitemap(true);
+    try {
+      const response = await fetch('/api/sitemap', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setSitemapInfo(data);
+        
+        // Also fetch smart tracking preview
+        await fetchSmartPreview(url);
+      } else {
+        setSitemapInfo(null);
+        setSmartPreview(null);
+        console.error('Failed to fetch sitemap info');
+      }
+    } catch (error) {
+      setSitemapInfo(null);
+      setSmartPreview(null);
+      console.error('Error fetching sitemap:', error);
+    } finally {
+      setIsLoadingSitemap(false);
+    }
+  };
+
+  // Function to fetch smart tracking preview
+  const fetchSmartPreview = async (url: string) => {
+    if (!url) {
+      setSmartPreview(null);
+      return;
+    }
+
+    setIsLoadingSmartPreview(true);
+    try {
+      const response = await fetch('/api/smart-preview', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url, priorityPaths: priorityPaths.filter(p => p.trim()) }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setSmartPreview(data);
+      } else {
+        setSmartPreview(null);
+        console.error('Failed to fetch smart preview');
+      }
+    } catch (error) {
+      setSmartPreview(null);
+      console.error('Error fetching smart preview:', error);
+    } finally {
+      setIsLoadingSmartPreview(false);
+    }
+  };
+
+  // Function to fetch AI recommendations
+  const fetchAIRecommendation = async (url: string, userPrompt?: string) => {
+    if (!url) {
+      setAIRecommendation(null);
+      return;
+    }
+
+    setIsLoadingAI(true);
+    try {
+      const response = await fetch('/api/ai-smart-crawl', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          url, 
+          userPrompt: userPrompt?.trim() || '',
+          maxSignals: 8
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setAIRecommendation(data);
+      } else {
+        setAIRecommendation(null);
+        console.error('Failed to fetch AI recommendation');
+      }
+    } catch (error) {
+      setAIRecommendation(null);
+      console.error('Error fetching AI recommendation:', error);
+    } finally {
+      setIsLoadingAI(false);
+    }
+  };
 
   const handleAddCompetitor = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -159,8 +323,8 @@ export default function Dashboard() {
 
     // Check if user has enough signals for selected monitoring type
     const requiredSignals = signalCosts[monitoringType];
-    if (userData.signalsBalance < requiredSignals) {
-      setError(`Not enough signals! You need ${requiredSignals} signal${requiredSignals > 1 ? 's' : ''} but only have ${userData.signalsBalance}.`);
+    if (currentUserData.signalsBalance < requiredSignals) {
+      setError(`Not enough signals! You need ${requiredSignals} signal${requiredSignals > 1 ? 's' : ''} but only have ${currentUserData.signalsBalance}.`);
       setIsSubmitting(false);
       return;
     }
@@ -195,6 +359,35 @@ export default function Dashboard() {
       console.error('Error adding competitor:', error);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleTogglePause = async (competitorId: string) => {
+    try {
+      const response = await fetch(`/api/competitors/${competitorId}/toggle`, {
+        method: 'POST',
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        // Update the competitor in the local state
+        setCompetitors(prev => 
+          prev.map(comp => 
+            comp.id === competitorId 
+              ? { ...comp, isActive: result.competitor.isActive }
+              : comp
+          )
+        );
+        
+        // Refresh recent activity to show the pause/resume action
+        await fetchRecentActivity();
+      } else {
+        const errorData = await response.json();
+        alert(`Failed to ${competitors.find(c => c.id === competitorId)?.isActive ? 'pause' : 'resume'}: ${errorData.error}`);
+      }
+    } catch (error) {
+      console.error('Error toggling competitor status:', error);
+      alert('Network error. Please try again.');
     }
   };
 
@@ -259,12 +452,12 @@ export default function Dashboard() {
               WATCH CENTER
             </h1>
             <p className="font-mono text-lg text-black">
-              Welcome back, <span className="font-bold">{userData.name}</span>
+              Welcome back, <span className="font-bold">{currentUserData.name}</span>
             </p>
           </div>
           <Button 
             onClick={() => {
-              if (userData.signalsBalance < signalCosts.SINGLE_PAGE) {
+              if (currentUserData.signalsBalance < signalCosts.SINGLE_PAGE) {
                 setShowSignalWarning(true);
               } else {
                 setShowAddForm(!showAddForm);
@@ -274,11 +467,17 @@ export default function Dashboard() {
                   setUrl('');
                   setDescription('');
                   setMonitoringType('SINGLE_PAGE');
+                  setUserIntent('');
+                  setCustomUrls(['']);
+                  setShowCustomUrls(false);
                   setError('');
                 }
               }
             }}
-            className="transform rotate-1"
+            className="transform rotate-1 animate-pulse hover:animate-bounce"
+            style={{
+              animation: competitors.length === 0 ? 'wobble 2s ease-in-out infinite' : undefined
+            }}
           >
             + ADD RIVAL
           </Button>
@@ -289,9 +488,9 @@ export default function Dashboard() {
           <div className="transform rotate-1">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
-                <h2 className="text-2xl font-bold mb-2 text-black">SIGNALS BALANCE: {userData.signalsBalance}</h2>
+                <h2 className="text-2xl font-bold mb-2 text-black">SIGNALS BALANCE: {currentUserData.signalsBalance}</h2>
                 <p className="font-mono text-black">
-                  Monitoring {userData.competitorsCount} rivals • Signals expire in {userData.signalsExpiry}
+                  Monitoring {currentUserData.competitorsCount} rivals • Signals expire in {currentUserData.signalsExpiry}
                 </p>
               </div>
               <div className="flex space-x-2">
@@ -323,13 +522,13 @@ export default function Dashboard() {
                 <div 
                   className="h-full border-r-4 border-black"
                   style={{ 
-                    width: `${Math.min((50 - userData.signalsBalance) / 50 * 100, 100)}%`,
+                    width: `${Math.min((50 - currentUserData.signalsBalance) / 50 * 100, 100)}%`,
                     backgroundColor: '#00ffff'
                   }}
                 ></div>
               </div>
               <p className="font-mono text-xs text-black mt-1">
-                {50 - userData.signalsBalance} signals used from your initial 50 free signals
+                {50 - currentUserData.signalsBalance} signals used from your initial 50 free signals
               </p>
             </div>
           </div>
@@ -391,7 +590,21 @@ export default function Dashboard() {
                     <Input
                       type="url"
                       value={url}
-                      onChange={(e) => setUrl(e.target.value)}
+                      onChange={(e) => {
+                        const newUrl = e.target.value;
+                        setUrl(newUrl);
+                        // Fetch sitemap info when URL is valid
+                        if (newUrl && newUrl.startsWith('http')) {
+                          fetchSitemapInfo(newUrl);
+                          // Also fetch AI recommendation for smart tracking
+                          if (monitoringType === 'SMART') {
+                            fetchAIRecommendation(newUrl, userIntent);
+                          }
+                        } else {
+                          setSitemapInfo(null);
+                          setAIRecommendation(null);
+                        }
+                      }}
                       placeholder="https://competitor.com"
                       required
                     />
@@ -401,7 +614,16 @@ export default function Dashboard() {
                 {/* Monitoring Type Selection */}
                 <div>
                   <label className="block font-bold mb-2 text-black">MONITORING TYPE</label>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  
+                  {isLoadingSitemap && (
+                    <div className="bg-yellow-400 border-4 border-black p-4 mb-4">
+                      <p className="font-mono text-black text-center">
+                        🔍 ANALYZING WEBSITE STRUCTURE...
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div 
                       className={`border-4 border-black p-4 cursor-pointer transform hover:scale-105 transition-transform ${
                         monitoringType === 'SINGLE_PAGE' 
@@ -413,11 +635,11 @@ export default function Dashboard() {
                       <div className="flex items-center justify-between mb-2">
                         <h3 className="font-bold text-black">SINGLE PAGE</h3>
                         <span className="bg-green-500 text-white px-2 py-1 text-xs font-bold border-2 border-black">
-                          {signalCosts.SINGLE_PAGE} SIGNAL
+                          1 SIGNAL
                         </span>
                       </div>
                       <p className="font-mono text-sm text-black">
-                        Monitor one specific URL (homepage, pricing page, etc.)
+                        Monitor just the main page you specify
                       </p>
                     </div>
                     
@@ -425,28 +647,271 @@ export default function Dashboard() {
                       className={`border-4 border-black p-4 cursor-pointer transform hover:scale-105 transition-transform ${
                         monitoringType === 'SECTION' 
                           ? 'bg-cyan-400' 
-                          : 'bg-white hover:bg-gray-100'
+                          : sitemapInfo?.sitemap?.totalPages > currentUserData.signalsBalance 
+                            ? 'bg-red-100 opacity-50 cursor-not-allowed'
+                            : 'bg-white hover:bg-gray-100'
                       }`}
-                      onClick={() => setMonitoringType('SECTION')}
+                      onClick={() => {
+                        if ((sitemapInfo?.sitemap?.totalPages || 0) <= currentUserData.signalsBalance) {
+                          setMonitoringType('SECTION');
+                        }
+                      }}
                     >
                       <div className="flex items-center justify-between mb-2">
-                        <h3 className="font-bold text-black">SECTION CRAWL</h3>
-                        <span className="bg-yellow-500 text-black px-2 py-1 text-xs font-bold border-2 border-black">
-                          {signalCosts.SECTION} SIGNALS
+                        <h3 className="font-bold text-black">FULL SITE</h3>
+                        <span className={`px-2 py-1 text-xs font-bold border-2 border-black ${
+                          (sitemapInfo?.sitemap?.totalPages || 0) > currentUserData.signalsBalance 
+                            ? 'bg-red-500 text-white'
+                            : 'bg-yellow-500 text-black'
+                        }`}>
+                          {sitemapInfo?.sitemap?.totalPages || '...'} SIGNALS
                         </span>
                       </div>
                       <p className="font-mono text-sm text-black">
-                        Monitor dynamic sections (blog, changelog) + up to 5 pages
+                        {sitemapInfo?.sitemap ? 
+                          `Monitor all ${sitemapInfo.sitemap.totalPages} pages found` :
+                          'Monitor entire website (analyzing...)'
+                        }
                       </p>
+                      {(sitemapInfo?.sitemap?.totalPages || 0) > currentUserData.signalsBalance && (
+                        <p className="font-mono text-xs text-red-600 mt-2">
+                          ⚠️ Insufficient signals (need {sitemapInfo?.sitemap?.totalPages}, have {currentUserData.signalsBalance})
+                        </p>
+                      )}
+                    </div>
+                    
+                    {/* SMART TRACKING OPTION */}
+                    <div 
+                      className={`border-4 border-black p-4 cursor-pointer transform hover:scale-105 transition-transform ${
+                        monitoringType === 'SMART' 
+                          ? 'bg-cyan-400' 
+                          : smartPreview?.estimatedSignals > currentUserData.signalsBalance 
+                            ? 'bg-red-100 opacity-50 cursor-not-allowed'
+                            : 'bg-white hover:bg-gray-100'
+                      }`}
+                      onClick={() => {
+                        if (smartPreview?.estimatedSignals <= currentUserData.signalsBalance) {
+                          setMonitoringType('SMART');
+                          // Fetch AI recommendation when switching to SMART
+                          if (url && url.startsWith('http')) {
+                            fetchAIRecommendation(url, userIntent);
+                          }
+                        }
+                      }}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-bold text-black">
+                          🧠 SMART
+                          {isLoadingSmartPreview && <span className="ml-2 text-xs">...</span>}
+                        </h3>
+                        <span className={`px-2 py-1 text-xs font-bold border-2 border-black ${
+                          smartPreview?.estimatedSignals > currentUserData.signalsBalance 
+                            ? 'bg-red-500 text-white'
+                            : 'bg-green-500 text-white'
+                        }`}>
+                          {smartPreview?.estimatedSignals || '...'} SIGNALS
+                        </span>
+                      </div>
+                      <p className="font-mono text-sm text-black">
+                        {smartPreview ? 
+                          `Track only the most important changes` :
+                          'AI-powered tracking of only changed content'
+                        }
+                      </p>
+                      {smartPreview && smartPreview.totalUrls > 0 && (
+                        <p className="font-mono text-xs text-black mt-2">
+                          💡 Saves ~{Math.max(0, smartPreview.totalUrls - smartPreview.estimatedSignals)} signals vs full site
+                        </p>
+                      )}
+                      {smartPreview?.estimatedSignals > currentUserData.signalsBalance && (
+                        <p className="font-mono text-xs text-red-600 mt-2">
+                          ⚠️ Insufficient signals (need {smartPreview.estimatedSignals}, have {currentUserData.signalsBalance})
+                        </p>
+                      )}
                     </div>
                   </div>
                   
                   <div className="mt-2 bg-white border-4 border-black p-3">
                     <p className="font-mono text-sm text-black">
-                      <strong>Cost: {signalCosts[monitoringType]} signal{signalCosts[monitoringType] > 1 ? 's' : ''}</strong> • 
-                      Your balance: {userData.signalsBalance} signals
+                      <strong>Cost: {
+                        monitoringType === 'SINGLE_PAGE' ? 1 : 
+                        monitoringType === 'SMART' ? (aiRecommendation?.estimated_signals || smartPreview?.estimatedSignals || '...') :
+                        sitemapInfo?.sitemap?.totalPages || '...'
+                      } signal{
+                        (monitoringType === 'SINGLE_PAGE' ? 1 : 
+                         monitoringType === 'SMART' ? (aiRecommendation?.estimated_signals || smartPreview?.estimatedSignals || 1) :
+                         sitemapInfo?.sitemap?.totalPages || 1) > 1 ? 's' : ''
+                      }</strong> • 
+                      Your balance: {currentUserData.signalsBalance} signals
+                    </p>
+                    {sitemapInfo?.sitemap && (
+                      <p className="font-mono text-xs text-black mt-1">
+                        Sitemap discovered {sitemapInfo.sitemap.totalPages} pages on {sitemapInfo.sitemap.domain}
+                      </p>
+                    )}
+                    {monitoringType === 'SMART' && smartPreview && (
+                      <div className="mt-4 bg-green-100 border-4 border-black p-4">
+                        <h4 className="font-bold text-black mb-2">🎯 SMART TRACKING PREVIEW</h4>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs font-mono text-black">
+                          <div>
+                            <span className="font-bold">Total URLs:</span>
+                            <br />{sitemapInfo?.sitemap?.totalPages || smartPreview.totalUrls}
+                          </div>
+                          <div>
+                            <span className="font-bold">Priority URLs:</span>
+                            <br />{smartPreview.priorityUrls}
+                          </div>
+                          <div>
+                            <span className="font-bold">Recent Changes:</span>
+                            <br />{smartPreview.recentChanges}
+                          </div>
+                          <div>
+                            <span className="font-bold">Will Track:</span>
+                            <br />{aiRecommendation?.estimated_signals || smartPreview.estimatedSignals} URLs
+                          </div>
+                        </div>
+                        {smartPreview.topPaths && smartPreview.topPaths.length > 0 && (
+                          <div className="mt-3">
+                            <p className="font-bold text-black text-sm mb-2">Top Paths Found:</p>
+                            <div className="flex flex-wrap gap-2">
+                              {smartPreview.topPaths.slice(0, 6).map((path: any, index: number) => (
+                                <span key={index} className="bg-white border-2 border-black px-2 py-1 text-xs font-mono">
+                                  {path.path} ({path.count})
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* RIVAL AI Recommendation - moved inside Smart Tracking Preview */}
+                        {isLoadingAI && (
+                          <div className="mt-3 bg-yellow-400 border-4 border-black p-3">
+                            <p className="font-mono text-black text-center">
+                              🧠 RIVAL AI is analyzing the website...
+                            </p>
+                          </div>
+                        )}
+                        
+                        {aiRecommendation && (
+                          <div className="mt-3 bg-cyan-100 border-4 border-black p-3">
+                            <h4 className="font-bold text-black mb-2">🧠 RIVAL AI</h4>
+                            {aiRecommendation.type === 'user_intent' ? (
+                              <div>
+                                <p className="font-mono text-xs text-black mb-2">
+                                  <strong>Your request:</strong> "{aiRecommendation.userPrompt}"
+                                </p>
+                                <p className="font-mono text-xs text-black mb-2">
+                                  <strong>AI Analysis:</strong> {aiRecommendation.interpretation}
+                                </p>
+                                <p className="font-mono text-xs text-black mb-2">
+                                  <strong>Pages found:</strong> {aiRecommendation.matched_pages?.length || 0} / {sitemapInfo?.sitemap?.totalPages || aiRecommendation.total_urls_in_sitemap} total
+                                </p>
+                                <p className="font-mono text-xs text-black">
+                                  <strong>Estimated signals:</strong> {aiRecommendation.estimated_signals}
+                                </p>
+                              </div>
+                            ) : (
+                              <div>
+                                <p className="font-mono text-xs text-black mb-2">
+                                  <strong>AI Analysis:</strong> {aiRecommendation.analysis_summary}
+                                </p>
+                                <p className="font-mono text-xs text-black mb-2">
+                                  <strong>Priority pages:</strong> {aiRecommendation.priority_pages?.length || 0} / {sitemapInfo?.sitemap?.totalPages || aiRecommendation.total_urls_in_sitemap} total
+                                </p>
+                                <p className="font-mono text-xs text-black">
+                                  <strong>Estimated signals:</strong> {aiRecommendation.estimated_signals}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                {/* User Intent for Smart Tracking */}
+                {monitoringType === 'SMART' && (
+                  <div className="mt-4 bg-green-100 border-4 border-black p-4">
+                    <label className="block font-bold mb-2 text-black">🧠 WHAT ARE YOU LOOKING TO TRACK? (OPTIONAL)</label>
+                    <textarea
+                      value={userIntent}
+                      onChange={(e) => {
+                        setUserIntent(e.target.value);
+                        // Fetch AI recommendation when user types intent
+                        if (url && url.startsWith('http')) {
+                          fetchAIRecommendation(url, e.target.value);
+                        }
+                      }}
+                      placeholder="e.g., 'pricing changes', 'new product features', 'blog posts about AI', 'competitor announcements'..."
+                      className="w-full border-4 border-black p-3 font-mono text-sm"
+                      rows={3}
+                    />
+                    <p className="font-mono text-xs text-black mt-2">
+                      🧠 RIVAL AI will analyze the sitemap and find pages matching your intent
                     </p>
                   </div>
+                )}
+                
+                {/* Custom URLs Option */}
+                <div className="mt-4">
+                  <div className="flex items-center mb-2">
+                    <input
+                      type="checkbox"
+                      id="customUrls"
+                      checked={showCustomUrls}
+                      onChange={(e) => setShowCustomUrls(e.target.checked)}
+                      className="mr-2"
+                    />
+                    <label htmlFor="customUrls" className="font-bold text-black">
+                      📝 ADD CUSTOM URLS (OPTIONAL)
+                    </label>
+                  </div>
+                  
+                  {showCustomUrls && (
+                    <div className="bg-white border-4 border-black p-4">
+                      <p className="font-mono text-sm text-black mb-3">
+                        Monitor specific URLs in addition to the main monitoring type:
+                      </p>
+                      {customUrls.map((customUrl, index) => (
+                        <div key={index} className="flex gap-2 mb-2">
+                          <Input
+                            type="url"
+                            value={customUrl}
+                            onChange={(e) => {
+                              const newUrls = [...customUrls];
+                              newUrls[index] = e.target.value;
+                              setCustomUrls(newUrls);
+                            }}
+                            placeholder="https://competitor.com/pricing"
+                            className="flex-1"
+                          />
+                          {customUrls.length > 1 && (
+                            <Button
+                              type="button"
+                              variant="danger"
+                              size="sm"
+                              onClick={() => {
+                                const newUrls = customUrls.filter((_, i) => i !== index);
+                                setCustomUrls(newUrls);
+                              }}
+                            >
+                              ✕
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setCustomUrls([...customUrls, ''])}
+                        className="mt-2"
+                      >
+                        + ADD ANOTHER URL
+                      </Button>
+                    </div>
+                  )}
                 </div>
                 
                 <div>
@@ -518,15 +983,45 @@ export default function Dashboard() {
                       {competitor.name || new URL(competitor.url).hostname}
                     </h3>
                     <div className="flex items-center space-x-2">
-                      <span className={`px-2 py-1 text-xs font-bold border-2 border-black ${
-                        competitor.isActive ? 'bg-brutalist-green' : 'bg-brutalist-yellow'
-                      }`}>
-                        {competitor.isActive ? 'ACTIVE' : 'PAUSED'}
-                      </span>
+                      {(() => {
+                        const status = getCompetitorStatus(competitor);
+                        return (
+                          <span 
+                            className="px-2 py-1 text-xs font-bold border-2 border-black text-white"
+                            style={{ backgroundColor: status.color }}
+                            title={status.description}
+                          >
+                            {status.icon} {status.status}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
                   
                   <p className="font-mono text-sm mb-2 break-all text-black">{competitor.url}</p>
+                  
+                  {/* Monitoring Details */}
+                  <div className="bg-white border-4 border-black p-3 mb-4">
+                    <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                      <div>
+                        <span className="font-bold">Type:</span> {competitor.monitoringType?.replace('_', ' ') || 'SINGLE PAGE'}
+                      </div>
+                      <div>
+                        <span className="font-bold">Frequency:</span> {competitor.crawlFrequency || 'DAILY'}
+                      </div>
+                      <div>
+                        <span className="font-bold">Crawls:</span> {competitor.successfulCrawls || 0}/{competitor.crawlAttempts || 0}
+                      </div>
+                      <div>
+                        <span className="font-bold">Success Rate:</span> {
+                          competitor.crawlAttempts > 0 
+                            ? Math.round((competitor.successfulCrawls / competitor.crawlAttempts) * 100) 
+                            : 0
+                        }%
+                      </div>
+                    </div>
+                  </div>
+                  
                   <p className="font-mono text-sm mb-4 text-black">
                     Last crawled: <span className="font-bold">
                       {competitor.lastCrawled 
@@ -534,6 +1029,9 @@ export default function Dashboard() {
                         : 'Never'
                       }
                     </span>
+                    {competitor.lastSuccessfulCrawl && (
+                      <span className="text-green-600 ml-2">✓</span>
+                    )}
                   </p>
                   
                   <div className="flex justify-between items-center mb-4">
@@ -555,14 +1053,21 @@ export default function Dashboard() {
                     >
                       VIEW CHANGES
                     </Button>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-3 gap-2">
                       <Button 
                         size="sm" 
                         variant="secondary"
                         onClick={() => handleCrawlNow(competitor.id)}
-                        disabled={isCrawling === competitor.id}
+                        disabled={isCrawling === competitor.id || !competitor.isActive}
                       >
                         {isCrawling === competitor.id ? 'CRAWLING...' : 'CRAWL NOW'}
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        variant={competitor.isActive ? "danger" : "primary"}
+                        onClick={() => handleTogglePause(competitor.id)}
+                      >
+                        {competitor.isActive ? '⏸ PAUSE' : '▶ RESUME'}
                       </Button>
                       <Button 
                         size="sm" 
@@ -590,31 +1095,48 @@ export default function Dashboard() {
             </div>
             
             <div className="space-y-4">
-              {recentActivity.map((activity, index) => (
-                <div 
-                  key={activity.id}
-                  className={`border-l-4 border-black pl-4 pb-4 ${
-                    index !== recentActivity.length - 1 ? 'border-b border-gray-200' : ''
-                  }`}
-                >
-                  <div className="flex justify-between items-start mb-2">
-                    <div className="flex items-center space-x-3">
-                      <span className={`px-2 py-1 text-xs font-bold border-2 border-black ${
-                        activity.severity === 'high' ? 'bg-brutalist-red text-white' :
-                        activity.severity === 'medium' ? 'bg-brutalist-yellow text-black' :
-                        'bg-brutalist-green text-black'
-                      }`}>
-                        {activity.type.replace('_', ' ')}
-                      </span>
-                      <h3 className="font-bold text-black">{activity.title}</h3>
-                    </div>
-                    <span className="font-mono text-xs text-black">{activity.time}</span>
-                  </div>
-                  <p className="font-mono text-sm text-black mb-1">
-                    <span className="font-bold">{activity.competitor}:</span> {activity.description}
-                  </p>
+              {recentActivity.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="font-mono text-black text-lg">NO ACTIVITY YET</p>
+                  <p className="font-mono text-black text-sm mt-2">Start monitoring rivals to see activity here</p>
                 </div>
-              ))}
+              ) : (
+                recentActivity.map((activity, index) => (
+                  <div 
+                    key={activity.id}
+                    className={`border-l-4 border-black pl-4 pb-4 ${
+                      index !== recentActivity.length - 1 ? 'border-b border-gray-200' : ''
+                    }`}
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex items-center space-x-3">
+                        <span className={`px-2 py-1 text-xs font-bold border-2 border-black ${
+                          activity.severity === 'high' ? 'bg-brutalist-red text-white' :
+                          activity.severity === 'medium' ? 'bg-brutalist-yellow text-black' :
+                          'bg-brutalist-green text-black'
+                        }`}>
+                          {activity.type === 'CHANGE' 
+                            ? activity.changeType?.replace('_', ' ') || 'CHANGE'
+                            : activity.type
+                          }
+                        </span>
+                        <h3 className="font-bold text-black">{activity.title}</h3>
+                      </div>
+                      <span className="font-mono text-xs text-black">
+                        {new Date(activity.time).toLocaleString()}
+                      </span>
+                    </div>
+                    <p className="font-mono text-sm text-black mb-1">
+                      <span className="font-bold">{activity.competitor}:</span> {activity.description}
+                    </p>
+                    {activity.type === 'CRAWL' && activity.signalsUsed && (
+                      <p className="font-mono text-xs text-black mt-1 opacity-75">
+                        Used {activity.signalsUsed} signal{activity.signalsUsed > 1 ? 's' : ''}
+                      </p>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </Card>
@@ -657,7 +1179,7 @@ export default function Dashboard() {
                       NOT ENOUGH SIGNALS!
                     </p>
                     <p className="font-mono text-black mb-4">
-                      You have <strong>{userData.signalsBalance} signals</strong> remaining.
+                      You have <strong>{currentUserData.signalsBalance} signals</strong> remaining.
                       You need at least <strong>{signalCosts.SINGLE_PAGE} signal</strong> to monitor a new rival.
                     </p>
                     <p className="font-mono text-black text-sm">

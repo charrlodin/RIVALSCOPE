@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { url, name, description } = await request.json();
+    const { url, name, description, monitoringType = 'SINGLE_PAGE', priorityPaths = [] } = await request.json();
 
     if (!url) {
       return NextResponse.json(
@@ -127,9 +127,31 @@ export async function POST(request: NextRequest) {
         userId: userId,
         url,
         name: name || new URL(url).hostname,
-        description
+        description,
+        monitoringType,
+        smartTracking: monitoringType === 'SMART',
+        priorityPaths: priorityPaths.length > 0 ? priorityPaths : null
+      },
+      include: {
+        _count: {
+          select: {
+            changes: true,
+            crawlLogs: true
+          }
+        }
       }
     });
+
+    // Initialize smart tracking if enabled
+    if (monitoringType === 'SMART') {
+      try {
+        const { smartTracking } = await import('@/lib/smart-tracking');
+        await smartTracking.initializeSmartTracking(competitor.id, url);
+      } catch (error) {
+        console.error('Failed to initialize smart tracking:', error);
+        // Don't fail the competitor creation, just log the error
+      }
+    }
 
     return NextResponse.json(competitor, { status: 201 });
   } catch (error) {

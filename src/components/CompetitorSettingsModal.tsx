@@ -12,6 +12,10 @@ interface CompetitorSettingsModalProps {
     url: string;
     description: string | null;
     isActive: boolean;
+    crawlFrequency?: 'DAILY' | 'WEEKLY' | 'MONTHLY';
+    monitoringType?: 'SINGLE_PAGE' | 'SECTION';
+    notificationFreq?: 'INSTANT' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'DISABLED';
+    enableNotifications?: boolean;
   };
   isOpen: boolean;
   onClose: () => void;
@@ -29,6 +33,10 @@ export default function CompetitorSettingsModal({
   const [name, setName] = useState(competitor.name || '');
   const [description, setDescription] = useState(competitor.description || '');
   const [isActive, setIsActive] = useState(competitor.isActive);
+  const [monitoringType, setMonitoringType] = useState<'SINGLE_PAGE' | 'SECTION'>(competitor.monitoringType || 'SINGLE_PAGE');
+  const [crawlFrequency, setCrawlFrequency] = useState<'DAILY' | 'WEEKLY' | 'MONTHLY'>(competitor.crawlFrequency || 'DAILY');
+  const [notificationFreq, setNotificationFreq] = useState<'INSTANT' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'DISABLED'>(competitor.notificationFreq || 'INSTANT');
+  const [enableNotifications, setEnableNotifications] = useState(competitor.enableNotifications !== false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -47,6 +55,10 @@ export default function CompetitorSettingsModal({
           name: name || null,
           description: description || null,
           isActive,
+          monitoringType,
+          crawlFrequency,
+          notificationFreq,
+          enableNotifications,
         }),
       });
 
@@ -181,12 +193,134 @@ export default function CompetitorSettingsModal({
                     </p>
                   </div>
 
+                  {/* Monitoring Type */}
+                  <div className="bg-yellow-400 border-4 border-black p-4 transform rotate-1">
+                    <h3 className="text-xl font-bold mb-4 text-black transform -rotate-1">
+                      MONITORING TYPE
+                    </h3>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div 
+                        className={`border-4 border-black p-4 cursor-pointer transition-colors ${
+                          monitoringType === 'SINGLE_PAGE' 
+                            ? 'bg-white text-black' 
+                            : 'bg-gray-200 hover:bg-gray-300 text-black'
+                        }`}
+                        onClick={() => setMonitoringType('SINGLE_PAGE')}
+                      >
+                        <div className="text-center">
+                          <span className="font-bold text-lg block">SINGLE PAGE</span>
+                          <span className="text-sm font-mono">1 Signal</span>
+                          <p className="text-xs font-mono mt-2">
+                            Monitor one specific URL for changes
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div 
+                        className={`border-4 border-black p-4 cursor-pointer transition-colors ${
+                          monitoringType === 'SECTION' 
+                            ? 'bg-white text-black' 
+                            : 'bg-gray-200 hover:bg-gray-300 text-black'
+                        }`}
+                        onClick={() => setMonitoringType('SECTION')}
+                      >
+                        <div className="text-center">
+                          <span className="font-bold text-lg block">FULL PAGES</span>
+                          <span className="text-sm font-mono">10 Signals</span>
+                          <p className="text-xs font-mono mt-2">
+                            Crawl multiple pages and sections
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <p className="text-sm font-mono mt-3 text-black">
+                      <strong>Note:</strong> Changing monitoring type will affect signal usage for future crawls.
+                    </p>
+                  </div>
+
+                  {/* Crawl Frequency */}
+                  <div className="bg-pink-400 border-4 border-black p-4 transform -rotate-1">
+                    <h3 className="text-xl font-bold mb-4 text-black transform rotate-1">
+                      CRAWL FREQUENCY
+                    </h3>
+                    
+                    <div className="grid grid-cols-3 gap-3">
+                      {(['DAILY', 'WEEKLY', 'MONTHLY'] as const).map((freq) => (
+                        <div 
+                          key={freq}
+                          className={`border-4 border-black p-3 cursor-pointer text-center transition-colors ${
+                            crawlFrequency === freq 
+                              ? 'bg-white text-black' 
+                              : 'bg-gray-200 hover:bg-gray-300 text-black'
+                          }`}
+                          onClick={() => setCrawlFrequency(freq)}
+                        >
+                          <span className="font-bold text-sm">{freq}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-sm font-mono mt-2 text-black">
+                      How often should we check this rival for changes?
+                    </p>
+                  </div>
+
+                  {/* Notification Settings */}
+                  <div className="bg-yellow-400 border-4 border-black p-4 transform rotate-1">
+                    <h3 className="text-xl font-bold mb-4 text-black transform -rotate-1">
+                      NOTIFICATIONS
+                    </h3>
+                    
+                    <div className="space-y-4">
+                      <div className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          checked={enableNotifications}
+                          onChange={(e) => setEnableNotifications(e.target.checked)}
+                          className="w-5 h-5 border-4 border-black"
+                        />
+                        <span className="font-bold text-black">
+                          ENABLE EMAIL NOTIFICATIONS
+                        </span>
+                      </div>
+                      
+                      {enableNotifications && (
+                        <div>
+                          <label className="block font-bold mb-2 text-black">
+                            NOTIFICATION FREQUENCY
+                          </label>
+                          <div className="grid grid-cols-2 gap-2">
+                            {(['INSTANT', 'DAILY', 'WEEKLY', 'MONTHLY'] as const).map((freq) => (
+                              <div 
+                                key={freq}
+                                className={`border-4 border-black p-2 cursor-pointer text-center transition-colors ${
+                                  notificationFreq === freq 
+                                    ? 'bg-white text-black' 
+                                    : 'bg-gray-200 hover:bg-gray-300 text-black'
+                                }`}
+                                onClick={() => setNotificationFreq(freq)}
+                              >
+                                <span className="font-bold text-xs">{freq}</span>
+                              </div>
+                            ))}
+                          </div>
+                          <p className="text-xs font-mono mt-2 text-black">
+                            {notificationFreq === 'INSTANT' && 'Get notified immediately when changes are detected'}
+                            {notificationFreq === 'DAILY' && 'Receive a daily digest of all changes'}
+                            {notificationFreq === 'WEEKLY' && 'Get a weekly summary of changes'}
+                            {notificationFreq === 'MONTHLY' && 'Monthly summary of all activity'}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   {/* Action Buttons */}
                   <div className="flex flex-col sm:flex-row gap-4">
                     <Button 
                       onClick={handleUpdate}
                       disabled={isUpdating}
-                      className="flex-1"
+                      className="flex-1 bg-green-500 text-white border-4 border-black hover:bg-green-600"
                     >
                       {isUpdating ? 'UPDATING...' : 'SAVE CHANGES'}
                     </Button>
@@ -194,7 +328,7 @@ export default function CompetitorSettingsModal({
                     <Button 
                       variant="secondary"
                       onClick={onClose}
-                      className="flex-1"
+                      className="flex-1 bg-gray-500 text-white border-4 border-black hover:bg-gray-600"
                     >
                       CANCEL
                     </Button>
